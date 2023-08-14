@@ -1,5 +1,7 @@
 import base64
 import logging
+from base64 import b64decode
+from tempfile import NamedTemporaryFile
 
 from redash.query_runner import (
     TYPE_BOOLEAN,
@@ -20,6 +22,7 @@ try:
     from pyhive import hive
     from pyhive.exc import DatabaseError
     from thrift.transport import THttpClient
+    from krbcontext import krbcontext
 
     enabled = True
 except ImportError:
@@ -59,9 +62,15 @@ class Hive(BaseSQLQueryRunner):
                 "port": {"type": "number"},
                 "database": {"type": "string"},
                 "username": {"type": "string"},
+                "auth": {"type": "string", "enum": ["NONE", "NOSASL", "KERBEROS", "LDAP", "CUSTOM"]},
+                "kerberosServiceName": {"type": "string"},
+                "keytabFile": {"type": "string"},
+                "principal": {"type": "string"},
             },
-            "order": ["host", "port", "database", "username"],
+            "order": ["host", "port", "database", "username", "auth"],
+            "extra_options": ["kerberosServiceName", "keytabFile", "principal"],
             "required": ["host"],
+            "secret": ["keytabFile"],
         }
 
     @classmethod
@@ -103,22 +112,46 @@ class Hive(BaseSQLQueryRunner):
 
     def _get_connection(self):
         host = self.configuration["host"]
-
-        connection = hive.connect(
-            host=host,
-            port=self.configuration.get("port", None),
-            database=self.configuration.get("database", "default"),
-            username=self.configuration.get("username", None),
-        )
-
-        return connection
-
-    def run_query(self, query, user):
-        connection = None
+        auth = self.configuration.get("auth", None)
+        def get_connect(query):
+            try:
+                if auth == 'KERBEROS':
+                    principal = self.configuration["principal"]
+                    keytab_encoded_bytes = self.configuration.get("keytabFile", None)
+                    if keytab_encoded_bytes:
+                        with NamedTemporaryFile(mode="w+b", suffix=".keytab") as keytab_file:
+                            keytab_bytes = b64decode(keytab_encoded_bytes)
+                            keytab_file.write(keytab_bytes)
+                            with krbcontext(using_keytab=True, principal=principal, keytab_file=keytab_file.name):
+                                connection = hive.connect(
+                                    host=host,
+                                    port=self.configuration.get("port", None),
+                                    database=self.configuration.get("database", "default"),
+                                    username=self.configuration.get("username", None),
+                                    auth=auth,
+                                    kerberos_service_name=self.configuration.get('kerberosServiceName', None),
+                                )
+                                return self.init_query(connection, query)
+                    else:
+                        raise IOError('has no keytab file')
+                else:
+                    connection = hive.connect(
+                        host=host,
+                        port=self.configuration.get("port", None),
+                        database=self.configuration.get("database", "default"),
+                        username=self.configuration.get("username", None),
+                        auth=auth,
+                    )
+                    return self.init_query(connection, query)
+            except Exception as e:
+                raise e
+        return get_connect
+    
+        
+    @staticmethod
+    def init_query(connection, query):
         try:
-            connection = self._get_connection()
             cursor = connection.cursor()
-
             cursor.execute(query)
 
             column_names = []
@@ -137,7 +170,6 @@ class Hive(BaseSQLQueryRunner):
                 )
 
             rows = [dict(zip(column_names, row)) for row in cursor]
-
             data = {"columns": columns, "rows": rows}
             json_data = json_dumps(data)
             error = None
@@ -154,6 +186,14 @@ class Hive(BaseSQLQueryRunner):
         finally:
             if connection:
                 connection.close()
+
+        return json_data, error
+
+
+    def run_query(self, query, user):
+        connection = None
+        connection = self._get_connection()
+        json_data, error = connection(query)
 
         return json_data, error
 

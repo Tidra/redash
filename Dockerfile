@@ -19,11 +19,11 @@ COPY --chown=redash viz-lib /frontend/viz-lib
 ARG code_coverage
 ENV BABEL_ENV=${code_coverage:+test}
 
-RUN if [ "x$skip_frontend_build" = "x" ] ; then yarn --frozen-lockfile --network-concurrency 1; fi
+RUN yarn --frozen-lockfile --network-concurrency 1
 
 COPY --chown=redash client /frontend/client
 COPY --chown=redash webpack.config.js /frontend/
-RUN if [ "x$skip_frontend_build" = "x" ] ; then yarn build; else mkdir -p /frontend/client/dist && touch /frontend/client/dist/multi_org.html && touch /frontend/client/dist/index.html; fi
+RUN yarn build
 
 FROM python:3.8-slim-buster
 
@@ -35,6 +35,9 @@ ARG skip_ds_deps
 ARG skip_dev_deps
 # Controls whether to install all dependencies for testing.
 ARG test_all_deps
+
+# 默认使用上海时区 + 阿里源
+RUN echo "Asia/Shanghai" > /etc/timezone && dpkg-reconfigure -f noninteractive tzdata
 
 RUN useradd --create-home redash
 
@@ -60,8 +63,15 @@ RUN apt-get update && \
   freetds-dev \
   libsasl2-dev \
   unzip \
-  libsasl2-modules-gssapi-mit && \
-  apt-get clean && \
+  libsasl2-modules-gssapi-mit
+RUN apt-get install -y --no-install-recommends \
+  vim-gtk \
+  procps
+RUN export DEBIAN_FRONTEND=noninteractive && \
+  apt-get install -y --no-install-recommends \
+  libkrb5-dev \
+  krb5-user
+RUN apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
 
