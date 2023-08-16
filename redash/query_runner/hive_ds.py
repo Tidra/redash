@@ -1,5 +1,6 @@
 import base64
 import logging
+import os
 from base64 import b64decode
 from tempfile import NamedTemporaryFile
 
@@ -113,43 +114,48 @@ class Hive(BaseSQLQueryRunner):
     def _get_connection(self):
         host = self.configuration["host"]
         auth = self.configuration.get("auth", None)
-        def get_connect(query):
-            try:
-                if auth == 'KERBEROS':
-                    principal = self.configuration["principal"]
-                    keytab_encoded_bytes = self.configuration.get("keytabFile", None)
-                    if keytab_encoded_bytes:
-                        with NamedTemporaryFile(mode="w+b", suffix=".keytab") as keytab_file:
-                            keytab_bytes = b64decode(keytab_encoded_bytes)
-                            keytab_file.write(keytab_bytes)
-                            with krbcontext(using_keytab=True, principal=principal, keytab_file=keytab_file.name):
-                                connection = hive.connect(
-                                    host=host,
-                                    port=self.configuration.get("port", None),
-                                    database=self.configuration.get("database", "default"),
-                                    username=self.configuration.get("username", None),
-                                    auth=auth,
-                                    kerberos_service_name=self.configuration.get('kerberosServiceName', None),
-                                )
-                                return self.init_query(connection, query)
-                    else:
-                        raise IOError('has no keytab file')
-                else:
+        connection = None
+        try:
+            if auth == 'KERBEROS':
+                principal = self.configuration["principal"]
+                keytab_file = self._generate_keytab_file()
+                krb_ccache_file = '/tmp/krb5cc_hive_{0}'.format(principal)
+                with krbcontext(using_keytab=True, principal=principal, keytab_file=keytab_file,
+                                ccache_file=krb_ccache_file):
                     connection = hive.connect(
                         host=host,
                         port=self.configuration.get("port", None),
                         database=self.configuration.get("database", "default"),
                         username=self.configuration.get("username", None),
                         auth=auth,
+                        kerberos_service_name=self.configuration.get('kerberosServiceName', None),
                     )
-                    return self.init_query(connection, query)
-            except Exception as e:
-                raise e
-        return get_connect
-    
-        
-    @staticmethod
-    def init_query(connection, query):
+            else:
+                connection = hive.connect(
+                    host=host,
+                    port=self.configuration.get("port", None),
+                    database=self.configuration.get("database", "default"),
+                    username=self.configuration.get("username", None),
+                    auth=auth,
+                )
+        except Exception as e:
+            raise e
+        finally:
+            if keytab_file:
+                os.remove(keytab_file)
+        return connection
+
+    def _generate_keytab_file(self):
+        keytab_encoded_bytes = self.configuration.get("keytabFile", None)
+        if keytab_encoded_bytes:
+            with NamedTemporaryFile(mode="w+b", delete=False, suffix=".keytab") as keytab_file:
+                keytab_bytes = b64decode(keytab_encoded_bytes)
+                keytab_file.write(keytab_bytes)
+            return keytab_file.name
+        return None
+
+    def run_query(self, query, user):
+        connection = None
         try:
             cursor = connection.cursor()
             cursor.execute(query)
@@ -186,14 +192,6 @@ class Hive(BaseSQLQueryRunner):
         finally:
             if connection:
                 connection.close()
-
-        return json_data, error
-
-
-    def run_query(self, query, user):
-        connection = None
-        connection = self._get_connection()
-        json_data, error = connection(query)
 
         return json_data, error
 
