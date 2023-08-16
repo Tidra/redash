@@ -157,7 +157,9 @@ class Hive(BaseSQLQueryRunner):
     def run_query(self, query, user):
         connection = None
         try:
+            connection = self._get_connection()
             cursor = connection.cursor()
+
             cursor.execute(query)
 
             column_names = []
