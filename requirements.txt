@@ -63,3 +63,4 @@ advocate==1.0.0
 urllib3==1.26.16
 importlib-resources==5.13.0
 krbcontext
+cx_Oracle
