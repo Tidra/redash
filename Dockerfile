@@ -36,9 +36,6 @@ ARG skip_dev_deps
 # Controls whether to install all dependencies for testing.
 ARG test_all_deps
 
-# 默认使用上海时区 + 阿里源
-RUN echo "Asia/Shanghai" > /etc/timezone && dpkg-reconfigure -f noninteractive tzdata
-
 RUN useradd --create-home redash
 
 # Ubuntu packages
@@ -71,9 +68,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
   apt-get install -y --no-install-recommends \
   libkrb5-dev \
   krb5-user
-RUN apt-get clean && \
-  rm -rf /var/lib/apt/lists/*
-
 
 ARG TARGETPLATFORM
 ARG databricks_odbc_driver_url=https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/odbc/2.6.26/SimbaSparkODBC-2.6.26.1045-Debian-64bit.zip
@@ -91,6 +85,29 @@ RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
   && printf "[Simba]\nDriver = /opt/simba/spark/lib/64/libsparkodbc_sb64.so" >> /etc/odbcinst.ini \
   && rm /tmp/simba_odbc.zip \
   && rm -rf /tmp/simba; fi
+
+# 安装oracle客户端
+RUN curl "https://raw.githubusercontent.com/egojason/docker-python-oracle/master/oracle-instantclient/instantclient-basic-linux.x64-12.1.0.2.0.zip" --location --output /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip \
+  && curl "https://raw.githubusercontent.com/egojason/docker-python-oracle/master/oracle-instantclient/instantclient-sdk-linux.x64-12.1.0.2.0.zip" --location --output /tmp/instantclient-sdk-linux.x64-12.1.0.2.0.zip \
+  && unzip /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip -d /opt/oracle \
+  && unzip /tmpinstantclient-sdk-linux.x64-12.1.0.2.0.zip -d /opt/oracle \
+  && mv /opt/oracle/instantclient_12_1 /opt/oracle/instantclient \
+  && ln -s /opt/oracle/instantclient/libclntsh.so.12.1 /opt/oracle/instantclient/libclntsh.so \
+  && ln -s /opt/oracle/instantclient/libocci.so.12.1 /opt/oracle/instantclient/libocci.so \
+  && rm /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip \
+  && rm /tmpinstantclient-sdk-linux.x64-12.1.0.2.0.zip
+
+ENV ORACLE_HOME="/opt/oracle/instantclient"
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$ORACLE_HOME
+ENV OCI_HOME="/opt/oracle/instantclient"
+ENV OCI_LIB_DIR="/opt/oracle/instantclient"
+ENV OCI_INCLUDE_DIR="/opt/oracle/instantclient/sdk/include"
+
+RUN apt-get install -y --no-install-recommends \
+  libaio-dev \
+  libaio1
+RUN apt-get clean && \
+  rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
