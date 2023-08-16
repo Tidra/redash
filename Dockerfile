@@ -90,12 +90,12 @@ RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
 RUN curl "https://raw.githubusercontent.com/egojason/docker-python-oracle/master/oracle-instantclient/instantclient-basic-linux.x64-12.1.0.2.0.zip" --location --output /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip \
   && curl "https://raw.githubusercontent.com/egojason/docker-python-oracle/master/oracle-instantclient/instantclient-sdk-linux.x64-12.1.0.2.0.zip" --location --output /tmp/instantclient-sdk-linux.x64-12.1.0.2.0.zip \
   && unzip /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip -d /opt/oracle \
-  && unzip /tmpinstantclient-sdk-linux.x64-12.1.0.2.0.zip -d /opt/oracle \
+  && unzip /tmp/instantclient-sdk-linux.x64-12.1.0.2.0.zip -d /opt/oracle \
   && mv /opt/oracle/instantclient_12_1 /opt/oracle/instantclient \
   && ln -s /opt/oracle/instantclient/libclntsh.so.12.1 /opt/oracle/instantclient/libclntsh.so \
   && ln -s /opt/oracle/instantclient/libocci.so.12.1 /opt/oracle/instantclient/libocci.so \
   && rm /tmp/instantclient-basic-linux.x64-12.1.0.2.0.zip \
-  && rm /tmpinstantclient-sdk-linux.x64-12.1.0.2.0.zip
+  && rm /tmp/instantclient-sdk-linux.x64-12.1.0.2.0.zip
 
 ENV ORACLE_HOME="/opt/oracle/instantclient"
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$ORACLE_HOME
